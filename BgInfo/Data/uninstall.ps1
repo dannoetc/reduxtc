@@ -1,0 +1,1 @@
+Remove-Item -Path "C:\BGInfo" -Recurse -Force -Confirm:$false
