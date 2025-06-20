@@ -23,7 +23,7 @@ set-strictmode -Version latest
 #region Configurable variables
 
 # Prefix to use for hostnames. The prefix must be an empty string if the asset tag value is the full hostname.
-$NamePrefix = 'CVT-KI-'
+$NamePrefix = 'CVT-LT-'
 
 # Regex string to verify validity of the asset tag. Default: 6 digit numerical value.
 $AssetRegex = '^\d{6}$'

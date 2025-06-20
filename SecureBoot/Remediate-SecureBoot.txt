@@ -1,0 +1,4 @@
+# Remediate SecureBoot
+
+Set-Item -Path DellSmbios:\SecureBoot\SecureBoot "Enabled"
+exit
