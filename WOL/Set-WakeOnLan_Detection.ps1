@@ -74,10 +74,13 @@ if ($Manufacturer -like "*Lenovo*") {
 $NicsWithWake = Get-CimInstance -ClassName "MSPower_DeviceWakeEnable" -Namespace "root/wmi" | Where-Object { $_.Enable -eq $False }
 if (!$NicsWithWake) {
     $NICWOL = "Healthy - All NICs enabled for WOL within the OS."
+	exit 0
 }
 else {
     $NICWOL = "Unhealthy - NIC does not have WOL enabled inside of the OS."
+	exit 1
 }
 if (!$WOLState) {
     $NICWOL = "Unhealthy - Could not find WOL state"
+	exit 1
 }
