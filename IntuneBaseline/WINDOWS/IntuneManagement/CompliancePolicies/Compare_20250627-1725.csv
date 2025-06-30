@@ -1,0 +1,5 @@
+﻿"ObjectName";"Id";"Type";"Property";"Value1";"Value2";"Match"
+"Win - OIB - Compliance - U - Defender for Endpoint - v3.1";"19214506-43ca-4284-a782-2aad6e8f12d7";"Compliance Policies";;;"Win - OIB - Compliance - U - Defender for Endpoint - v3.1";"False"
+"Win - OIB - Compliance - U - Device Health - v3.1";"e87d2b39-75a0-4eca-8729-db419a7551fc";"Compliance Policies";;;"Win - OIB - Compliance - U - Device Health - v3.1";"False"
+"Win - OIB - Compliance - U - Device Security - v3.1";"09decce4-cd10-4a00-891f-d9bccf2cc097";"Compliance Policies";;;"Win - OIB - Compliance - U - Device Security - v3.1";"False"
+"Win - OIB - Compliance - U - Password - v3.1";"f201b86e-ce93-4543-9278-3840544bb010";"Compliance Policies";;;"Win - OIB - Compliance - U - Password - v3.1";"False"
