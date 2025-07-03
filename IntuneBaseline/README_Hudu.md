@@ -1,5 +1,9 @@
 ﻿# Intune documentation
 
+[TOC]
+
+# Intune documentation
+
 
 *Organization:* coraswellness
 
