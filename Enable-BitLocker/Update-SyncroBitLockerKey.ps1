@@ -17,9 +17,9 @@ $ProgressPreference = 'SilentlyContinue'
 try { [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.ServicePointManager]::SecurityProtocol } catch {}
 
 # ====== >>>>>>>  SUPPLY YOUR CREDENTIALS  <<<<<<< ======
-$TenantId     = "ef0d09ea-dcbd-4116-8af0-6e16a5351c7a"
-$ClientId     = "5935284d-44f2-4def-8c5e-ec2ee418dcdf"
-$ClientSecret = "Mu28Q~~coWwy34IvNr2lIuzCOjIY5s0lrm9o1dek"
+$TenantId     = "Fill this out "
+$ClientId     = "Fill this out"
+$ClientSecret = "Fill this out"
 
 # ====== Paths & Logging ======
 $BaseFolder   = 'C:\ReduxTC'
