@@ -1,7 +1,7 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-  [string]$FromDomain = 'coraswellness.org",
-  [string]$ToDomain   = 'inperiumservicesinc.onmicrosoft.com',
+  [string]$FromDomain = 'contoso.org", # Fill these in
+  [string]$ToDomain   = 'chickenpoo.onmicrosoft.com',
   [switch]$UpdateMailbox
 )
 
