@@ -1,4 +1,10 @@
-﻿Set-StrictMode -Version Latest
+﻿<# 
+    Enable BitLocker on OS drive and escrow recovery key to C:\ReduxTC\Bitlocker\BitLockerKey.txt
+    Also writes a detailed log to C:\ReduxTC\Bitlocker\BitLocker.log
+    Intended to run as SYSTEM on Intune/Entra-joined Windows 10/11 (Pro/Enterprise).
+#>
+
+Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
 # -------- Paths --------
@@ -11,6 +17,7 @@ $logFile      = Join-Path $bitlockerDir 'BitLocker.log'
 function Ensure-Folder { param([string]$Path) if (-not (Test-Path -LiteralPath $Path)) { New-Item -ItemType Directory -Path $Path -Force | Out-Null } }
 function Secure-ItemAcl { param([string]$Path) & icacls $Path /inheritance:r | Out-Null; & icacls $Path /grant:r "SYSTEM:(F)" "Administrators:(F)" | Out-Null }
 function To-Array { param($Value) if ($null -eq $Value) { @() } elseif ($Value -is [System.Array]) { $Value } else { @($Value) } }
+function Count-Of { param($x) @($x).Count }
 
 function Write-Log {
     param([string]$Message,[string]$Level = "INFO")
@@ -51,6 +58,11 @@ function Get-RecoveryPasswordsFromManageBde {
     return $result
 }
 
+function Get-RecoveryProtectorIds {
+    param($KeyProtectors)
+    (To-Array $KeyProtectors) | Where-Object { $_.KeyProtectorType -eq 'RecoveryPassword' } | ForEach-Object { $_.KeyProtectorId }
+}
+
 function Try-BackupToAAD {
     param([string]$MountPoint,[string[]]$KeyProtectorIds)
     try {
@@ -61,15 +73,6 @@ function Try-BackupToAAD {
             }
         } else { Write-Log "BackupToAAD-BitLockerKeyProtector not available on this system." }
     } catch { Write-Log "Azure AD backup attempt failed: $($_.Exception.Message)" "WARN" }
-}
-
-function Normalize-AddReturn {
-    param($addObj)
-    if (-not $addObj) { return $null }
-    $kid = $addObj.KeyProtectorId
-    if (-not $kid -and $addObj.PSObject.Properties.Name -contains 'KeyProtector') { $kid = $addObj.KeyProtector.KeyProtectorId }
-    $pwd = $addObj.RecoveryPassword
-    if ($kid) { [pscustomobject]@{ KeyProtectorId = $kid; RecoveryPassword = $pwd } } else { $null }
 }
 
 # -------- Main --------
@@ -104,28 +107,32 @@ try {
 
     if ($os.ProtectionStatus -eq 'On') {
         Write-Log "BitLocker already ON for $mount. Ensuring a Recovery Password exists."
-        $current = (Get-OsVolume).KeyProtector
-        $hasRecovery = To-Array ($current | Where-Object { $_.KeyProtectorType -eq 'RecoveryPassword' })
-        if ($hasRecovery.Count -eq 0) {
-            $add  = Add-BitLockerKeyProtector -MountPoint $mount -RecoveryPasswordProtector -ErrorAction Stop
-            $norm = Normalize-AddReturn $add
-            if ($norm) {
-                $newProtectorIds += $norm.KeyProtectorId
-                if ($norm.RecoveryPassword) { $capturedRecovery += $norm }
-                Write-Log "Added Recovery Password protector to already-encrypted volume."
-            }
+        $current = Get-OsVolume
+        $beforeIds = Get-RecoveryProtectorIds $current.KeyProtector
+
+        if ((Count-Of $beforeIds) -eq 0) {
+            # Add recovery protector; suppress noisy warning output
+            $null = Add-BitLockerKeyProtector -MountPoint $mount -RecoveryPasswordProtector -ErrorAction Stop -WarningAction SilentlyContinue -Confirm:$false
+
+            $afterIds = Get-RecoveryProtectorIds (Get-OsVolume).KeyProtector
+            $newIds   = (To-Array $afterIds) | Where-Object { (To-Array $beforeIds) -notcontains $_ }
+            $newProtectorIds += $newIds
         }
     } else {
         Write-Log "BitLocker is OFF on $mount. Enabling…"
         if ($tpmPresent -and $tpmReady) {
             Write-Log "Using TPM protector, then adding Recovery Password."
             Enable-BitLocker @common -TpmProtector
-            $add  = Add-BitLockerKeyProtector -MountPoint $mount -RecoveryPasswordProtector -ErrorAction Stop
-            $norm = Normalize-AddReturn $add
-            if ($norm) { $newProtectorIds += $norm.KeyProtectorId; if ($norm.RecoveryPassword) { $capturedRecovery += $norm } }
+
+            $beforeIds = Get-RecoveryProtectorIds (Get-OsVolume).KeyProtector
+            $null = Add-BitLockerKeyProtector -MountPoint $mount -RecoveryPasswordProtector -ErrorAction Stop -WarningAction SilentlyContinue -Confirm:$false
+            $afterIds = Get-RecoveryProtectorIds (Get-OsVolume).KeyProtector
+            $newIds   = (To-Array $afterIds) | Where-Object { (To-Array $beforeIds) -notcontains $_ }
+            $newProtectorIds += $newIds
         } else {
             Write-Log "TPM not present/ready. Enabling with Recovery Password protector."
-            Enable-BitLocker @common -RecoveryPasswordProtector
+            # This prints a warning with the password; silence it.
+            $null = Enable-BitLocker @common -RecoveryPasswordProtector -WarningAction SilentlyContinue
         }
 
         Start-Sleep -Seconds 3
@@ -138,15 +145,14 @@ try {
         }
     }
 
-    # Build escrow entries (normalize to arrays before counting)
-    $recoveryEntries = @()
-    $capturedRecovery = To-Array $capturedRecovery
-    if ($capturedRecovery.Count -gt 0) { $recoveryEntries += $capturedRecovery }
-
+    # Build escrow entries:
+    # Parse *all* recovery passwords then (if we created new protectors) label those as new
     $parsed = To-Array (Get-RecoveryPasswordsFromManageBde -MountPoint $mount)
-    if ($parsed.Count -gt 0) {
-        $existingKids = (To-Array $recoveryEntries).KeyProtectorId
-        $recoveryEntries += $parsed | Where-Object { $existingKids -notcontains $_.KeyProtectorId }
+
+    # Prefer including all recovery passwords (so you have the complete set); de-dup by ID
+    $seen = @{}
+    $recoveryEntries = foreach ($p in $parsed) {
+        if (-not $seen.ContainsKey($p.KeyProtectorId)) { $seen[$p.KeyProtectorId] = $true; $p }
     }
 
     # Compose escrow text
@@ -164,14 +170,17 @@ try {
     if ($didEnable) { $lines += "Action:        Enabled BitLocker (UsedSpaceOnly, XtsAes256, SkipHardwareTest)" }
     $lines += ""
 
-    $recoveryEntries = To-Array $recoveryEntryArray
-    if ($recoveryEntryArray.Count -gt 0) {
+    if ((Count-Of $recoveryEntries) -gt 0) {
         $lines += "Recovery Password(s):"
-        foreach ($entry in $recoveryEntryArray) {
-            $lines += "  ID: {$($entry.KeyProtectorId)}"
-            $lines += "  Password: $($entry.RecoveryPassword)"
-            $lines += ""
+foreach ($entry in (To-Array $recoveryEntries)) {
+    $newTag = ""
+        if ((To-Array $newProtectorIds) -contains $entry.KeyProtectorId) {
+        $newTag = " [NEW]"
         }
+        $lines += "  ID: {$($entry.KeyProtectorId)}$newTag"
+        $lines += "  Password: $($entry.RecoveryPassword)"
+        $lines += ""
+    }
     } else {
         $lines += "No Recovery Passwords found."
         $lines += ""
@@ -187,14 +196,19 @@ try {
     }
     Write-Log "Escrow written: $escrowFile"
 
-    # AAD backup (normalize to array)
+    # AAD backup for newly created protectors (if any)
     $newProtectorIds = To-Array $newProtectorIds
-    if ($newProtectorIds.Count -gt 0) { Try-BackupToAAD -MountPoint $mount -KeyProtectorIds $newProtectorIds }
-
+    if ((Count-Of $newProtectorIds) -gt 0) { 
+        $BLV = Get-BitLockerVolume -MountPoint "C:"
+        BackupToAAD-BitLockerKeyProtector -MountPoint "C:" -KeyProtectorId $BLV.KeyProtector[1].KeyProtectorId 
+    }
+    
     Import-Module $env:SyncroModule 
     Log-Activity -Message "BitLocker enabled, key escrowed." -EventName "BitLocker Enabled"
+    
     Upload-File -Filepath $escrowFile 
     Write-Log "Completed successfully."
+    Exit 0
 
 } catch {
     $msg = "ERROR: $($_.Exception.Message)"
