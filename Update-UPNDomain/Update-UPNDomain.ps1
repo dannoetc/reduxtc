@@ -1,9 +1,10 @@
 [CmdletBinding(SupportsShouldProcess = $true)]
 param(
-  [string]$FromDomain = 'contoso.org", # Fill these in
-  [string]$ToDomain   = 'chickenpoo.onmicrosoft.com',
+  [string]$FromDomain = 'coraswellness.onmicrosoft.com',
+  [string]$ToDomain   = 'coraswellness.org',
   [switch]$UpdateMailbox
 )
+
 
 $ErrorActionPreference = 'Stop'
 
