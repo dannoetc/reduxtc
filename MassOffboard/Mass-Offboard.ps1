@@ -49,6 +49,7 @@ function Get-UserIdOrThrow {
 function Convert-ToSharedMailbox {
     param([string]$Identity)
     try {
+	sleep 10s
         $mbx = Get-ExoMailbox -Identity $Identity -ErrorAction Stop
         if ($mbx.RecipientTypeDetails -ne 'SharedMailbox') {
             Set-Mailbox -Identity $Identity -Type Shared -ErrorAction Stop
