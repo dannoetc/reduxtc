@@ -2,8 +2,32 @@
 .SYNOPSIS
   Ping a target over time and export an HTML timeline report (PingPlotter-style).
 
+.EXAMPLE
+  .\New-PingTimeline.ps1 -Target 8.8.8.8 -IntervalSeconds 1 -DurationMinutes 5 -OutFile C:\Temp\PingReport.html
+
+.PARAMETER Target
+  Hostname or IP to ping.
+
+.PARAMETER IntervalSeconds
+  Seconds between pings (default 1).
+
+.PARAMETER DurationMinutes
+  Total duration in minutes (alternative to -Count).
+
+.PARAMETER Count
+  Number of pings to send (alternative to -DurationMinutes).
+
+.PARAMETER TimeoutMs
+  Ping timeout in milliseconds (default 1000).
+
+.PARAMETER OutFile
+  HTML report path. Defaults to $PWD\PingReport_<target>_<timestamp>.html
+
+.PARAMETER CsvFile
+  Optional CSV output path.
+
 .NOTES
-  Windows PowerShell 5.1 compatible.
+  Compatible with Windows PowerShell 5.1+.
 #>
 
 param(
@@ -167,31 +191,26 @@ foreach ($v in $rtts) { if ($v -ne $null -and $v -gt $maxY) { $maxY = $v } }
 if ($maxY -lt 100) { $maxY = 100 }
 $maxY = [int]([math]::Ceiling($maxY / 50.0) * 50)
 
-# Precompute display strings (PowerShell 5.1 safe)
-$minStr = "-"
-if ($min -ne $null) { $minStr = "$min" }
-
-$avgStr = "-"
-if ($avg -ne $null) { $avgStr = "$avg" }
-
-$maxStr = "-"
-if ($max -ne $null) { $maxStr = "$max" }
-
-$jitStr = "-"
-if ($jitterMad -ne $null) { $jitStr = "$jitterMad" }
+# Precompute display strings
+$minStr = "-"; if ($min -ne $null) { $minStr = "$min" }
+$avgStr = "-"; if ($avg -ne $null) { $avgStr = "$avg" }
+$maxStr = "-"; if ($max -ne $null) { $maxStr = "$max" }
+$jitStr = "-"; if ($jitterMad -ne $null) { $jitStr = "$jitterMad" }
+$csvTip = "Tip: Use -CsvFile to export raw data."
+if ($EmitCsv -and $CsvFile) { $csvTip = "CSV written to <code>$CsvFile</code>." }
 
 # Ensure output folder exists
 $outDir = [System.IO.Path]::GetDirectoryName($OutFile)
 if ($outDir -and -not (Test-Path $outDir)) { $null = New-Item -ItemType Directory -Path $outDir -Force }
 
-# >>> CRITICAL FIX: precompute JSON for embedding <<<
+# JSON blobs for HTML
 $jsonTimes = ($timesIso | ConvertTo-Json -Compress)
 $jsonRtts  = ($rtts     | ConvertTo-Json -Compress)
 $jsonOk    = ($flags    | ConvertTo-Json -Compress)
 $jsonSts   = ($statuses | ConvertTo-Json -Compress)
 $jsonTtls  = ($ttls     | ConvertTo-Json -Compress)
 
-# HTML (self-contained)
+# HTML
 $html = @"
 <!doctype html>
 <html lang="en">
@@ -209,7 +228,7 @@ $html = @"
   .grid { display:grid; grid-template-columns:repeat(5,1fr); gap:12px; margin:12px 0 4px 0; }
   .stat { background:#0e1530; border:1px solid #1c2750; border-radius:12px; padding:12px; }
   .stat .k { color:var(--muted); font-size:12px; }
-  .stat .v { font-size:18px; font-weight:600; }
+  .stat .v { font-size:16px; font-weight:600; }
   canvas { width:100%; height:360px; display:block; }
   .legend { display:flex; gap:16px; color:var(--muted); font-size:12px; margin-top:6px; }
   .dot { width:10px; height:10px; border-radius:50%; display:inline-block; vertical-align:middle; margin-right:6px; }
@@ -220,28 +239,34 @@ $html = @"
   th { color:#9aa6e0; font-weight:600; }
   .footer { color:var(--muted); margin-top:10px; font-size:12px; }
   code { color:#8fd1ff; }
+  .btn { background:#0e1530; color:#cdd4ff; border:1px solid #1c2750; border-radius:8px; padding:6px 10px; cursor:pointer; }
+  .btn:hover { filter:brightness(1.1); }
 </style>
 </head>
 <body>
 <div class="wrap">
   <div class="card">
-    <h1>Ping Timeline — $Target</h1>
+    <h1>Ping Timeline &mdash; $Target</h1>
     <div class="sub">
-      $( $startTime.ToString("yyyy-MM-dd HH:mm:ss") ) → $( $endTime.ToString("yyyy-MM-dd HH:mm:ss") )
-      • Interval: $IntervalSeconds s • Timeout: $TimeoutMs ms • Samples: $($data.Count)
+      $( $startTime.ToString("yyyy-MM-dd HH:mm:ss") ) &rarr; $( $endTime.ToString("yyyy-MM-dd HH:mm:ss") )
+      &bull; Interval: $IntervalSeconds s &bull; Timeout: $TimeoutMs ms &bull; Samples: $($data.Count)
     </div>
     <div class="grid">
       <div class="stat"><div class="k">Sent</div><div class="v">$sent</div></div>
       <div class="stat"><div class="k">Received</div><div class="v">$recv</div></div>
       <div class="stat"><div class="k">Loss</div><div class="v">$loss ($lossPct`%)</div></div>
-      <div class="stat"><div class="k">RTT (min/avg/max)</div><div class="v">$minStr / $avgStr / $maxStr ms</div></div>
-      <div class="stat"><div class="k">Jitter (MAD)</div><div class="v">$jitStr ms</div></div>
+      <div class="stat"><div class="k">RTT (min/avg/max)</div><div class="v">$minStr / $avgStr / $maxStr&nbsp;ms</div></div>
+      <div class="stat"><div class="k">Jitter (MAD)</div><div class="v">$jitStr&nbsp;ms</div></div>
     </div>
 
     <canvas id="chart" width="1000" height="360"></canvas>
     <div class="legend">
       <span><span class="dot lat"></span>Latency (ms)</span>
       <span><span class="dot los"></span>Loss</span>
+    </div>
+
+    <div style="text-align:right; margin-top:8px; margin-bottom:6px;">
+      <button id="toggleRows" class="btn">Show all</button>
     </div>
 
     <table>
@@ -257,7 +282,6 @@ $html = @"
 (function(){
   const times = $jsonTimes;
   const rtts  = $jsonRtts;
-  const ok    = $jsonOk;
   const sts   = $jsonSts;
   const ttls  = $jsonTtls;
   const ymax  = $maxY;
@@ -265,15 +289,15 @@ $html = @"
   const canvas = document.getElementById('chart');
   const ctx = canvas.getContext('2d');
   const W = canvas.width, H = canvas.height;
-  const padL = 50, padR = 12, padT = 10, padB = 45; // add space for time labels
+  const padL = 50, padR = 12, padT = 10, padB = 45;
 
   function x(i){ return padL + (i * (W - padL - padR) / Math.max(1,(rtts.length-1))); }
   function y(ms){ var v = Math.min(ms, ymax); return H - padB - (v * (H - padT - padB) / ymax); }
 
-  // bg
+  // Background
   ctx.fillStyle = "#0b1020"; ctx.fillRect(0,0,W,H);
 
-  // grid
+  // Grid
   ctx.strokeStyle = "#2a355f"; ctx.lineWidth = 1;
   var gridStep = Math.max(25, Math.ceil(ymax/6/25)*25);
   for (var ms=0; ms<=ymax; ms+=gridStep){
@@ -284,7 +308,7 @@ $html = @"
   }
   ctx.beginPath(); ctx.moveTo(padL, H-padB); ctx.lineTo(W-padR, H-padB); ctx.stroke();
 
-  // latency line
+  // Line
   ctx.lineWidth = 2; ctx.strokeStyle = "#62c4ff"; ctx.beginPath();
   var started = false;
   for (var i=0;i<rtts.length;i++){
@@ -294,15 +318,12 @@ $html = @"
   }
   ctx.stroke();
 
-  // packet loss markers
+  // Loss dots
   for (var j=0;j<rtts.length;j++){
-    if (rtts[j]===null){
-      var cx=x(j), cy=H-padB-4;
-      ctx.fillStyle="#ff6b6b"; ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill();
-    }
+    if (rtts[j]===null){ var cx=x(j), cy=H-padB-4; ctx.fillStyle="#ff6b6b"; ctx.beginPath(); ctx.arc(cx,cy,3,0,Math.PI*2); ctx.fill(); }
   }
 
-  // secondary X axis (time labels)
+  // Time labels (secondary x-axis)
   ctx.fillStyle="#a8b0d9"; ctx.font="11px Segoe UI, Roboto, Arial";
   var tickCount = Math.min(10, Math.max(3, Math.floor(rtts.length / 10)));
   var step = Math.max(1, Math.floor(rtts.length / tickCount));
@@ -312,27 +333,45 @@ $html = @"
     var tx = x(i);
     var tw = ctx.measureText(label).width;
     ctx.fillText(label, tx - tw/2, H - 8);
-    // optional small tick mark
     ctx.strokeStyle="#2a355f";
-    ctx.beginPath();
-    ctx.moveTo(tx, H - padB);
-    ctx.lineTo(tx, H - padB + 4);
-    ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(tx, H - padB); ctx.lineTo(tx, H - padB + 4); ctx.stroke();
   }
 
-  // table
+  // Table with expand/collapse
   var tbody = document.getElementById('rows');
-  var html = "";
-  var len = times.length;
-  var step2 = Math.max(1, Math.floor(len/1000));
-  for (var k=0;k<len;k+=step2){
-    var t2 = new Date(times[k]).toLocaleString();
-    var v2 = (rtts[k]===null ? "—" : rtts[k]);
-    var s = sts[k] || "";
-    var ttl = (ttls[k]===null || ttls[k]===undefined) ? "—" : ttls[k];
-    html += "<tr><td>"+t2+"</td><td>"+v2+"</td><td>"+s+"</td><td>"+ttl+"</td></tr>";
+  var toggle = document.getElementById('toggleRows');
+  var INITIAL_ROWS = 20;
+
+  function rowHtml(idx){
+    var t = new Date(times[idx]).toLocaleString();
+    var v = (rtts[idx]===null ? "-" : rtts[idx]);
+    var s = sts[idx] || "";
+    var ttl = (ttls[idx]===null || ttls[idx]===undefined) ? "-" : ttls[idx];
+    return "<tr><td>"+t+"</td><td>"+v+"</td><td>"+s+"</td><td>"+ttl+"</td></tr>";
   }
-  tbody.innerHTML = html;
+
+  function renderTable(limit){
+    var len = times.length;
+    var end = limit ? Math.min(limit, len) : len;
+    var html = "";
+    for (var k=0; k<end; k++){ html += rowHtml(k); }
+    tbody.innerHTML = html;
+    if (toggle){
+      if (end < len){ toggle.textContent = "Show all ("+len+")"; }
+      else { toggle.textContent = "Collapse to first 20"; }
+    }
+  }
+
+  tbody.setAttribute('data-expanded','0');
+  renderTable(INITIAL_ROWS);
+
+  if (toggle){
+    toggle.addEventListener('click', function(){
+      var expanded = tbody.getAttribute('data-expanded') === '1';
+      if (expanded){ tbody.setAttribute('data-expanded','0'); renderTable(INITIAL_ROWS); }
+      else { tbody.setAttribute('data-expanded','1'); renderTable(0); }
+    });
+  }
 })();
 </script>
 </body>
