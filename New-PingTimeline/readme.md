@@ -55,7 +55,7 @@ Save a CSV file in addition to HTML:
 
 ## Example Screenshot
 
-![Ping Timeline Example](https://raw.githubusercontent.com/reduxtc/tools/main/examples/pingtimeline.png)
+![Ping Timeline Example](https://github.com/dannoetc/reduxtc/blob/main/New-PingTimeline/pingtimeline.png?raw=true)
 
 ## Author
 
