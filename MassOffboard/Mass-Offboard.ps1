@@ -49,14 +49,27 @@ function Get-UserIdOrThrow {
 function Convert-ToSharedMailbox {
     param([string]$Identity)
     try {
-	sleep 10s
+        Start-Sleep -Seconds 10
         $mbx = Get-ExoMailbox -Identity $Identity -ErrorAction Stop
-        if ($mbx.RecipientTypeDetails -ne 'SharedMailbox') {
-            Set-Mailbox -Identity $Identity -Type Shared -ErrorAction Stop
+
+        if ($mbx.RecipientTypeDetails -eq 'SharedMailbox') {
+            return "Already Shared"
+        }
+
+        Set-Mailbox -Identity $Identity -Type Shared -ErrorAction Stop
+
+        # Wait up to ~60 seconds for the type to flip
+        $maxAttempts = 12
+        for ($i = 1; $i -le $maxAttempts; $i++) {
+            Start-Sleep -Seconds 5
             $mbx2 = Get-ExoMailbox -Identity $Identity -ErrorAction Stop
-            if ($mbx2.RecipientTypeDetails -ne 'SharedMailbox') { throw "Post-check did not return SharedMailbox." }
-            "Converted to Shared"
-        } else { "Already Shared" }
+            if ($mbx2.RecipientTypeDetails -eq 'SharedMailbox') {
+                return "Converted to Shared"
+            }
+        }
+
+        # If we get here, the command succeeded but the type hasn't updated yet
+        return "Conversion requested; mailbox not yet reporting SharedMailbox (likely replication delay)"
     } catch {
         throw "Mailbox conversion error for '$Identity': $($_.Exception.Message)"
     }

@@ -1,0 +1,4 @@
+"Timestamp","UPN","ConvertMailbox","LicenseAction","SignInAction","Notes","Status"
+"2025-11-18T15:53:15","kkellam@coraswellness.org","Failed",,,"Mailbox conversion error for 'kkellam@coraswellness.org': Post-check did not return SharedMailbox.","Error"
+"2025-11-18T15:53:36","jlambert@coraswellness.org","Failed",,,"Mailbox conversion error for 'jlambert@coraswellness.org': Post-check did not return SharedMailbox.","Error"
+"2025-11-18T15:53:55","bdormoh@coraswellness.org","Failed",,,"Mailbox conversion error for 'bdormoh@coraswellness.org': Post-check did not return SharedMailbox.","Error"
